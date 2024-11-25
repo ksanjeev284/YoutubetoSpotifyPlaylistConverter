@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { ConversionResult, Track, YouTubePlaylist } from '../types';
 
-const API_URL = import.meta.env.PROD ? '/.netlify/functions' : 'https://youtubetospotifyplaylistconverter.netlify.app/.netlify/functions/spotify-auth';
+const API_URL = import.meta.env.PROD ? '/.netlify/functions' : 'https://youtubetospotifyplaylistconverter.netlify.app/.netlify/functions';
 
 export async function fetchYouTubePlaylist(url: string): Promise<YouTubePlaylist> {
   const response = await axios.post(`${API_URL}/youtube-playlist`, { url });
