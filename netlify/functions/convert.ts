@@ -126,9 +126,18 @@ export const handler: Handler = async (event) => {
       };
     }
 
+    console.log('Extracting tracks from playlist:', playlistId);
     const tracks = await extractTracksFromPlaylist(playlistId);
+    console.log('Found tracks:', tracks.length);
+
+    if (tracks.length === 0) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'No tracks found in playlist' })
+      };
+    }
+
     const result = await createSpotifyPlaylist(tracks, token);
-    
     return {
       statusCode: 200,
       headers: {
@@ -138,9 +147,12 @@ export const handler: Handler = async (event) => {
       body: JSON.stringify(result)
     };
   } catch (error) {
+    console.error('Conversion error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to convert playlist' })
+      body: JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Failed to convert playlist' 
+      })
     };
   }
 };
