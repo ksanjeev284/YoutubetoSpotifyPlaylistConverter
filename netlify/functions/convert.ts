@@ -19,21 +19,37 @@ async function extractTracksFromPlaylist(playlistId: string): Promise<Track[]> {
 
     const $ = cheerio.load(response.data);
     
-    $('ytd-playlist-video-renderer').each((_, element) => {
-      const title = $(element).find('#video-title').text().trim();
-      const artist = $(element).find('.ytd-channel-name').text().trim();
-      
-      if (title && title !== '[Deleted video]' && title !== '[Private video]') {
-        tracks.push({
-          title,
-          artist: artist || 'Unknown Artist',
-          duration: 0
-        });
-      }
-    });
+    const scripts = $('script').filter((_, el) => $(el).html()?.includes('var ytInitialData = '));
+    const scriptContent = scripts.first().html() || '';
+    
+    const match = scriptContent.match(/var ytInitialData = (.+?);<\/script>/);
+    if (match) {
+      const data = JSON.parse(match[1]);
+      const items = data?.contents?.twoColumnBrowseResultsRenderer
+        ?.tabs[0]?.tabRenderer?.content?.sectionListRenderer
+        ?.contents[0]?.itemSectionRenderer?.contents[0]
+        ?.playlistVideoListRenderer?.contents || [];
+
+      items.forEach((item: any) => {
+        const videoData = item.playlistVideoRenderer;
+        if (videoData && videoData.title.runs) {
+          const title = videoData.title.runs[0].text;
+          const artist = videoData.shortBylineText?.runs[0]?.text || 'Unknown Artist';
+          
+          if (title && !title.includes('[Deleted video]') && !title.includes('[Private video]')) {
+            tracks.push({
+              title,
+              artist,
+              duration: 0
+            });
+          }
+        }
+      });
+    }
 
     return tracks;
   } catch (error) {
+    console.error('Track extraction error:', error);
     throw new Error('Failed to extract tracks from playlist');
   }
 }
@@ -43,14 +59,19 @@ async function createSpotifyPlaylist(tracks: Track[], token: string) {
     const spotify = SpotifyApi.withAccessToken(process.env.SPOTIFY_CLIENT_ID!, token);
     
     const me = await spotify.currentUser.profile();
+    console.log('Creating playlist for user:', me.id);
+    
     const playlist = await spotify.playlists.createPlaylist(me.id, {
       name: 'Imported YouTube Playlist',
       description: 'Converted from YouTube using PlaylistPort',
       public: false
     });
 
+    console.log('Created playlist:', playlist.id);
     const trackUris: string[] = [];
+    
     for (const track of tracks) {
+      console.log('Searching for track:', track.title, track.artist);
       const searchResult = await spotify.search.search(
         `${track.title} ${track.artist}`,
         ['track'],
@@ -60,9 +81,13 @@ async function createSpotifyPlaylist(tracks: Track[], token: string) {
       
       if (searchResult.tracks.items.length > 0) {
         trackUris.push(searchResult.tracks.items[0].uri);
+        console.log('Found track:', searchResult.tracks.items[0].name);
+      } else {
+        console.log('No match found for:', track.title);
       }
     }
 
+    console.log('Adding', trackUris.length, 'tracks to playlist');
     for (let i = 0; i < trackUris.length; i += 100) {
       const batch = trackUris.slice(i, i + 100);
       await spotify.playlists.addItems(playlist.id, batch);
@@ -76,7 +101,7 @@ async function createSpotifyPlaylist(tracks: Track[], token: string) {
     console.error('Spotify API error:', error);
     return {
       success: false,
-      error: 'Failed to create Spotify playlist'
+      error: error instanceof Error ? error.message : 'Failed to create Spotify playlist'
     };
   }
 }
